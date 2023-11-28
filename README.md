@@ -54,4 +54,4 @@ All the gathered information is exported to a CSV file, creating a log of your c
 
 Sailors and buccaneers alike, contributions are always welcome! If you spot a bug or have an enhancement in mind, raise the Script  by opening an issue or submit a pull request. Together, we'll keep our cyber seas safe and secure.
 
-## ⚓ Fair Winds and Happy Sailing! ⚓
+## ⚓Ah!!! Follow me, I'm about to launch an automatic hash analysis feature that returns the most intuitive results to help you save a lot of time. Fair Winds and Happy Sailing! ⚓
