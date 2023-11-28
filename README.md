@@ -52,6 +52,6 @@ All the gathered information is exported to a CSV file, creating a log of your c
 
 ## Contributions
 
-Sailors and buccaneers alike, contributions are always welcome! If you spot a bug or have an enhancement in mind, raise the Jolly Roger by opening an issue or submit a pull request. Together, we'll keep our cyber seas safe and secure.
+Sailors and buccaneers alike, contributions are always welcome! If you spot a bug or have an enhancement in mind, raise the Script  by opening an issue or submit a pull request. Together, we'll keep our cyber seas safe and secure.
 
 ## ⚓ Fair Winds and Happy Sailing! ⚓
