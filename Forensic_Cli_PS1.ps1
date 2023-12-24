@@ -1,21 +1,28 @@
-﻿function Get-ProcessDlls {
+function Get-ProcessDlls {
     param (
         [Parameter(Mandatory=$true)]
         [int]$ProcessId,
         [Parameter(Mandatory=$true)]
-        [string]$OutputCSV
+        [string]$OutputCSV,
+        [Parameter(Mandatory=$true)]
+        [string]$OutputJSON
     )
 
-    # Sử dụng WMI để lấy danh sách DLL được load bởi tiến trình
+    # Use WMI to get information about the specified process and its associated DLLs
     $query = "SELECT * FROM Win32_Process WHERE ProcessId = $ProcessId"
     $process = Get-WmiObject -Query $query
 
     if ($process -ne $null) {
+        # Retrieve associated DLLs using WMI
         $query = "ASSOCIATORS OF {$($process.__RELPATH)} WHERE ResultClass = CIM_DataFile"
         $dlls = Get-WmiObject -Query $query
 
+        # Create an array to store DLL information
+        $dllInfoArray = @()
+
         if ($dlls -ne $null) {
             foreach ($dll in $dlls) {
+                # Extract information about the DLL
                 $dllPath = $dll.Name
                 $dllSizeKB = [math]::Round(($dll.FileSize / 1KB), 2)
                 $dllHashAlgorithm = [System.Security.Cryptography.SHA256]::Create()
@@ -23,47 +30,121 @@
                 $dllHashBytes = $dllHashAlgorithm.ComputeHash($dllFileStream)
                 $dllHash = [System.BitConverter]::ToString($dllHashBytes) -replace '-'
                 $dllFileStream.Close()
-                
-                # Write DLL information to CSV
+
+                # Construct an object with DLL information
                 $dllInfo = [PSCustomObject]@{
-                	"TimeCreate"	   = $process.CreationDate
-                    "ProcessName"      = $process.Name
-                    "ProcessPath"      = $process.ExecutablePath
-                    "ProcessID"        = $ProcessId
-                    "ProcessSizeKB"    = $fileStream.Length
-                    "CommandLine"      = $CommandLine
-                    "ProcessPathHash"  = (Get-FileHash -Path $process.ExecutablePath -Algorithm SHA256).Hash
-                    "DLLPath"          = $dllPath
-                    "DLLSizeKB"        = $dllSizeKB
-                    "DLLHash"          = $dllHash
+                    "DLLPath"   = $dllPath
+                    "DLLSizeKB" = $dllSizeKB
+                    "DLLHash"   = $dllHash
                 }
-                $dllInfo | Export-Csv -Path $OutputCSV -Append -Force -NoTypeInformation
-                
-                # Display DLL information
-                $dllInfoString = "Process: $($process.Name) Load DLLPath: $($dllInfo.DLLPath) "
-                Write-Host $dllInfoString -ForegroundColor Cyan
+
+                # Add DLL information to the array
+                $dllInfoArray += $dllInfo
             }
+        }
+
+        # Construct an object with detailed information for JSON
+        $jsonInfo = [PSCustomObject]@{
+            "Process" = @{
+                "Name"            = $process.Name
+                "ID"              = $ProcessId
+                "CreationDate"    = $process.CreationDate
+                "CommandLine"     = $process.CommandLine
+                "Executable"      = @{
+                    "Path"   = if ($process.ExecutablePath -ne $null) { $process.ExecutablePath } else { "N/A" }
+                    "SizeKB" = if ($process.ExecutablePath -ne $null) {
+                        $fileStream = [System.IO.File]::OpenRead($process.ExecutablePath)
+                        [math]::Round(($fileStream.Length / 1KB), 2)
+                    } else { 0 }
+                    "Hash"   = if ($process.ExecutablePath -ne $null) {
+                        (Get-FileHash -Path $process.ExecutablePath -Algorithm SHA256).Hash
+                    } else { "N/A" }
+                }
+                "WorkingSetSizeKB" = [math]::Round(($process.WorkingSetSize / 1KB), 2)
+                "Description"     = $process.Description
+                "Parent"          = @{
+                    "Name" = $null
+                    "ID"   = $null
+                }
+                "Hash"            = $null
+                "DLLs"            = $dllInfoArray  # Include DLL information
+            }
+        }
+
+        # If there's a parent process, include its information
+        $parentProcessId = $process.ParentProcessId
+        if ($parentProcessId -ne $null) {
+            $parentProcess = Get-CimInstance Win32_Process -Filter "ProcessId = $parentProcessId"
+            if ($parentProcess -ne $null) {
+                $jsonInfo.Process.Parent.Name = $parentProcess.Name
+                $jsonInfo.Process.Parent.ID   = $parentProcessId
+            }
+        }
+
+        # Calculate and include the hash of the entire process
+        $processBytes = [System.Text.Encoding]::UTF8.GetBytes($process.Name)
+        $processHashAlgorithm = [System.Security.Cryptography.SHA256]::Create()
+        $processHashBytes = $processHashAlgorithm.ComputeHash($processBytes)
+        $jsonInfo.Process.Hash = [System.BitConverter]::ToString($processHashBytes) -replace '-'
+
+        # Write information to CSV
+        $csvInfo = [PSCustomObject]@{
+            "Process Name"        = $process.Name
+            "Process ID"          = $ProcessId
+            "Creation Date"       = $process.CreationDate
+            "Command Line"        = $process.CommandLine
+            "Executable Path"     = if ($process.ExecutablePath -ne $null) { $process.ExecutablePath } else { "N/A" }
+            "Executable Size (KB)"= if ($process.ExecutablePath -ne $null) {
+                $fileStream = [System.IO.File]::OpenRead($process.ExecutablePath)
+                [math]::Round(($fileStream.Length / 1KB), 2)
+            } else { 0 }
+            "Executable Hash"     = if ($process.ExecutablePath -ne $null) {
+                (Get-FileHash -Path $process.ExecutablePath -Algorithm SHA256).Hash
+            } else { "N/A" }
+            "Working Set Size (KB)"= [math]::Round(($process.WorkingSetSize / 1KB), 2)
+            "Description"         = $process.Description
+            "Parent Process Name" = $jsonInfo.Process.Parent.Name
+            "Parent Process ID"   = $jsonInfo.Process.Parent.ID
+            "Process Hash"        = $jsonInfo.Process.Hash
+            "DLL Path"            = $dllInfoArray.DLLPath -join ";"
+            "DLL Size (KB)"       = $dllInfoArray.DLLSizeKB -join ";"
+            "DLL Hash"            = $dllInfoArray.DLLHash -join ";"
+        }
+        $csvInfo | Export-Csv -Path $OutputCSV -Append -Force -NoTypeInformation
+
+        # Write information to JSON
+        $jsonInfo | ConvertTo-Json | Out-File -Append -FilePath $OutputJSON -Encoding UTF8
+
+        # Display information about the loaded DLLs
+        $dllInfoArray | ForEach-Object {
+            $dllInfoString = "Process: $($process.Name) Load DLLPath: $($_.DLLPath)"
+            Write-Host $dllInfoString -ForegroundColor Cyan
         }
     }
 }
 
 function Monitor-Processes {
     param (
-        [string]$OutputCSV = "ProcessInfo.csv"
+        [string]$OutputCSV = "ProcessInfo.csv",
+        [string]$OutputJSON = "ProcessInfo.json"
     )
 
+    # Hashtable to track processed IDs
     $trackedProcesses = @{}
 
     while ($true) {
         try {
+            # Get information about all running processes
             $newProcesses = Get-CimInstance Win32_Process | Where-Object { $_.ProcessId -ne $null }
 
             foreach ($process in $newProcesses) {
                 $processId = $process.ProcessId
 
                 if (-not $trackedProcesses.ContainsKey($processId)) {
+                    # Mark the process as tracked
                     $trackedProcesses[$processId] = $true
 
+                    # Display separator and basic process information
                     $separator = "=" * 30
                     Write-Host ("$separator [!] Cli Powershell Live  Forensic By:Longhoangth18 $separator") -ForegroundColor Yellow
                     Write-Host ("{0,-20} : {1}" -f "Process Name", $process.Name)
@@ -127,7 +208,7 @@ function Monitor-Processes {
                     Write-Host ("{0,-20} : {1}" -f "Process Hash", $processHash) -ForegroundColor Green
 
                     # Get DLLs loaded by the process
-                    Get-ProcessDlls -ProcessId $processId -OutputCSV $OutputCSV
+                    Get-ProcessDlls -ProcessId $processId -OutputCSV $OutputCSV -OutputJSON $OutputJSON
                 }
             }
         }
@@ -137,5 +218,6 @@ function Monitor-Processes {
     }
 }
 
+# Start monitoring processes and log information to CSV and JSON
 $global:trackedProcesses = @{}
-Monitor-Processes -OutputCSV "Log_CLI_Forensic_Cli.csv"
+Monitor-Processes -OutputCSV "Log_CLI_Forensic.csv" -OutputJSON "Log_CLI_Forensic.json"
