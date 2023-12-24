@@ -45,7 +45,7 @@ All the gathered information is exported to a CSV file, creating a log of your c
     ```
 
 3. **View the Log:**
-    Open the generated CSV file (`Log_CLI_Forensic_Cli.csv`) to view a detailed record of your command line adventures.
+    Open the generated CSV . Json file (`Log_CLI_Forensic.csv and Log_CLI_Forensic.json`) to view a detailed record of your command line adventures.
 
 4. **Adjust the Course:**
     Feel free to customize the script according to your needs and explore new territories.
