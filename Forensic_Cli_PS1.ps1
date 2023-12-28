@@ -68,6 +68,7 @@ function Get-ProcessDlls {
                 }
                 "Hash"            = $null
                 "DLLs"            = $dllInfoArray  # Include DLL information
+                "Connections"     = $null  # Initialize the Connections property
             }
         }
 
@@ -87,8 +88,20 @@ function Get-ProcessDlls {
         $processHashBytes = $processHashAlgorithm.ComputeHash($processBytes)
         $jsonInfo.Process.Hash = [System.BitConverter]::ToString($processHashBytes) -replace '-'
 
+        # Check for outgoing connections
+        $netstatOutput = netstat -ano | Select-String -Pattern "$ProcessId" -AllMatches
+        if ($netstatOutput -ne $null) {
+            $connections = @()
+            $netstatOutput | ForEach-Object {
+                $connectionString = $_.ToString().Trim()
+                $connections += $connectionString
+            }
+            $jsonInfo.Process.Connections = $connections
+        }
+
         # Write information to CSV
         $csvInfo = [PSCustomObject]@{
+            #"Net WorkOundbound"   = $netstatOutput
             "Process Name"        = $process.Name
             "Process ID"          = $ProcessId
             "Creation Date"       = $process.CreationDate
@@ -109,6 +122,7 @@ function Get-ProcessDlls {
             "DLL Path"            = $dllInfoArray.DLLPath -join ";"
             "DLL Size (KB)"       = $dllInfoArray.DLLSizeKB -join ";"
             "DLL Hash"            = $dllInfoArray.DLLHash -join ";"
+            #"Connections"         = $jsonInfo.Process.Connections -join ";"
         }
         $csvInfo | Export-Csv -Path $OutputCSV -Append -Force -NoTypeInformation
 
@@ -119,6 +133,17 @@ function Get-ProcessDlls {
         $dllInfoArray | ForEach-Object {
             $dllInfoString = "Process: $($process.Name) Load DLLPath: $($_.DLLPath)"
             Write-Host $dllInfoString -ForegroundColor Cyan
+        }
+
+        # Display information about outgoing connections
+        if ($jsonInfo.Process.Connections.Count -gt 0) {
+            Write-Host "Outgoing connections for process $($process.Name):" -ForegroundColor Green
+            $jsonInfo.Process.Connections | ForEach-Object {
+                $connectionString = $_.ToString().Trim()
+                Write-Host $connectionString -ForegroundColor Cyan
+            }
+        } else {
+            Write-Host "No outgoing connections for process $($process.Name)" -ForegroundColor Green
         }
     }
 }
